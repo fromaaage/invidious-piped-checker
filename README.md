@@ -30,7 +30,18 @@ Most public instances listed online are dead, have their API disabled, or are bl
 
 The bot checks are not bypassed. Playback has to be confirmed by you. Fetching the feed and resolving `@handles` contacts youtube.com directly, without an account.
 
-## Requirements
+## Download
+
+Grab the AppImage from the [latest release](https://github.com/fromaaage/invidious-piped-checker/releases/latest). It contains everything, so there is nothing to install:
+
+```sh
+chmod +x Invidious_Piped_Checker-*-x86_64.AppImage
+./Invidious_Piped_Checker-*-x86_64.AppImage
+```
+
+Linux x86_64 only. If it complains about FUSE, start it with `--appimage-extract-and-run`.
+
+## Run from source
 
 - Python ≥ 3.10
 - PySide6 (Qt 6) and requests
@@ -42,13 +53,13 @@ sudo pacman -S pyside6 python-requests
 pip install PySide6 requests
 ```
 
-## Usage
-
 ```sh
 python app.py                 # GUI, starts checking right away
 python app.py --no-autoscan   # GUI without the automatic check
 python core.py                # CLI table
 python core.py --json         # CLI, JSON output
 ```
+
+To build the AppImage yourself: `packaging/build-appimage.sh [version]`. Releases are built automatically by GitHub Actions when a `v*` tag is pushed.
 
 Your marks, check history, subscriptions and custom instances are stored in `~/.config/invidious-piped-checker/`.

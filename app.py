@@ -15,7 +15,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 import core
 import subs
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))  # PyInstaller bundle or source
 CONFIG_DIR = Path.home() / ".config" / "invidious-piped-checker"
 EXTRA = CONFIG_DIR / "extra.json"  # [[app, url], ...]
 MARKS = CONFIG_DIR / "marks.json"  # {web_url: {"ok": bool, "date": "YYYY-MM-DD", "app": str}}

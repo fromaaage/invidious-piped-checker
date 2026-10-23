@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Invidious & Piped Checker
+Comment=Find working Invidious/Piped instances and keep local subscriptions
+Exec=invidious-piped-checker
+Icon=invidious-piped-checker
+Categories=Network;Video;
+Terminal=false
