@@ -13,8 +13,8 @@ jobs:
     # oldest supported runner → AppImage runs on older distros too (glibc)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: System libraries for Qt
@@ -24,7 +24,7 @@ jobs:
       - name: Smoke test
         run: |
           HOME=$(mktemp -d) QT_QPA_PLATFORM=offscreen timeout 30 dist/*.AppImage --no-autoscan || [ $? -eq 124 ]
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: appimage
           path: dist/*.AppImage
