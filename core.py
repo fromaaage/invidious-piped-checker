@@ -11,7 +11,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 
@@ -19,11 +19,13 @@ BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/1
 VIDEO_ID = "jNQXAC9IVRw"  # "Me at the zoo" – stable since 2005
 TIMEOUT = 10
 UA = {"User-Agent": "Mozilla/5.0 (invidious-piped-checker)", "Accept": "application/json"}
+WEB_ONLY = ("Poke", "CloudTube", "Hyperpipe")  # frontends without a public API we test
+MONITOR_UPTIME: dict[str, float] = {}  # url -> uptime % reported by api.invidious.io
 
 
 @dataclass
 class Instance:
-    app: str  # "Piped" | "Invidious"
+    app: str  # "Invidious" | "Piped" | one of WEB_ONLY
     url: str  # API base URL without path
     country: str = ""  # ISO code, e.g. "DE"
     sources: list = field(default_factory=list)
@@ -36,6 +38,7 @@ class Instance:
     latency: float | None = None  # median, seconds
     version: str = ""
     error: str = ""
+    monitor_uptime: float | None = None  # % from api.invidious.io, if listed
 
     @property
     def working(self):
@@ -73,7 +76,11 @@ def src_invidious_api():
     out = []
     for host, info in _get("https://api.invidious.io/instances.json").json():
         if info.get("type") == "https":
-            out.append(("Invidious", info.get("uri", f"https://{host}"), info.get("region", "")))
+            uri = info.get("uri", f"https://{host}")
+            uptime = (info.get("monitor") or {}).get("uptime")
+            if uptime is not None and _norm(uri):
+                MONITOR_UPTIME[_norm(uri)] = float(uptime)
+            out.append(("Invidious", uri, info.get("region", "")))
     return out
 
 
@@ -94,7 +101,10 @@ def src_piped_uptime():
 
 def src_libredirect():
     data = _get("https://raw.githubusercontent.com/libredirect/instances/main/data.json").json()
-    return [("Invidious", u, "") for u in data.get("invidious", {}).get("clearnet", [])]
+    out = [("Invidious", u, "") for u in data.get("invidious", {}).get("clearnet", [])]
+    for app, key in (("Poke", "poke"), ("CloudTube", "cloudtube"), ("Hyperpipe", "hyperpipe")):
+        out += [(app, u, "") for u in data.get(key, {}).get("clearnet", [])]
+    return out
 
 
 def src_farside():
@@ -126,7 +136,7 @@ def collect(extra=(), log=print):
         if not u:
             return
         inst = found.setdefault((app, u), Instance(app=app, url=u))
-        if app == "Invidious":
+        if app == "Invidious" or app in WEB_ONLY:
             inst.web_url = u
         elif web and not inst.web_url:
             inst.web_url = _norm(web) or ""
@@ -148,6 +158,8 @@ def collect(extra=(), log=print):
                 log(f"Source {name}: error – {e}")
     for app, url in extra:
         add(app, url, "", "manual", url if app == "Piped" else "")
+    for inst in found.values():
+        inst.monitor_uptime = MONITOR_UPTIME.get(inst.url)
     return list(found.values())
 
 
@@ -246,6 +258,9 @@ def test(inst):
     inst.api_ok = inst.search_ok = inst.playback_ok = False
     inst.latency = None
     inst.error = ""
+    if inst.app in WEB_ONLY:
+        check_online(inst)
+        return inst
     try:
         times = (_test_piped if inst.app == "Piped" else _test_invidious)(inst)
         inst.latency = statistics.median(times) if times else None
@@ -266,6 +281,42 @@ def test_all(instances, on_done=None, workers=16):
             if on_done:
                 on_done(f.result())
     return instances
+
+
+# ---------- YouTube links ----------
+
+_YT_HOSTS = ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be",
+             "www.youtube-nocookie.com", "youtube-nocookie.com")
+
+
+def video_path(app):
+    """Path of the short test video on an instance."""
+    return "/" if app == "Hyperpipe" else f"/watch?v={VIDEO_ID}"
+
+
+def convert_link(yt_url, base, app="Invidious"):
+    """Turns a YouTube link into the same page on an instance. Returns None if it isn't a YouTube link.
+    Frontends in WEB_ONLY only get video links mapped; anything else opens their start page."""
+    yt_url = yt_url.strip()
+    if not re.match(r"https?://", yt_url):
+        yt_url = "https://" + yt_url
+    p = urlparse(yt_url)
+    if p.netloc.lower() not in _YT_HOSTS:
+        return None
+    path, query = p.path, p.query
+    if p.netloc.lower() == "youtu.be":
+        vid = path.strip("/")
+        query = f"v={vid}" + (f"&{query}" if query else "")
+        path = "/watch"
+    elif m := re.match(r"/(shorts|live|embed)/([\w-]{11})", path):
+        query = f"v={m.group(2)}" + (f"&{query}" if query else "")
+        path = "/watch"
+    if app in WEB_ONLY and (app == "Hyperpipe" or path != "/watch"):
+        return base.rstrip("/") + "/"
+    if path == "/results" and app == "Invidious":
+        q = parse_qs(query).get("search_query", [""])[0]
+        path, query = "/search", urlencode({"q": q})
+    return f"{base.rstrip('/')}{path or '/'}" + (f"?{query}" if query else "")
 
 
 def main():
